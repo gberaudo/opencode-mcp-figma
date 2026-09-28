@@ -4,8 +4,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import express from "express";
 import { type McpOAuthConfig, McpOAuthProvider } from "./oauth-provider.js";
+import { serverKey } from "./storage.js";
+import { writeOpenCodeCredential } from "./opencode-store.js";
 
-const CALLBACK_PORT = 3000;
+const CALLBACK_PORT = 3001;
 const OAUTH_CALLBACK_PATH = "/callback";
 
 async function startCallbackServer(provider: McpOAuthProvider): Promise<Server> {
@@ -76,13 +78,40 @@ async function connectWithAuth(mcpServerUrl: string, provider: McpOAuthProvider)
   }
 }
 
+function parseArgs(argv: string[]): {
+  url: string | undefined;
+  name: string | undefined;
+  backup: boolean;
+  skipOpencode: boolean;
+} {
+  const positional: string[] = [];
+  const flags: { name?: string; backup?: boolean; skipOpencode?: boolean } = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--name") flags.name = argv[++i];
+    else if (arg === "--backup") flags.backup = true;
+    else if (arg === "--skip-opencode") flags.skipOpencode = true;
+    else positional.push(arg);
+  }
+  return { url: positional[0], name: flags.name, backup: flags.backup === true, skipOpencode: flags.skipOpencode === true };
+}
+
 async function main() {
-  const mcpServerUrl = process.argv[2];
+  const { url: mcpServerUrl, name: nameFlag, backup, skipOpencode } = parseArgs(process.argv.slice(2));
   if (!mcpServerUrl) {
-    console.error("Usage: ts-node src/index.ts <mcp-server-url>");
-    console.error("  Example: ts-node src/index.ts https://example.com/mcp");
+    console.error("Usage: npm start -- <mcp-server-url> [--name <opencode-server-name>] [--backup] [--skip-opencode]");
+    console.error("  Example: npm start -- https://mcp.figma.com/mcp");
+    console.error("");
+    console.error("  --name           Server name in opencode.json (mcp.servers.<name>).");
+    console.error("                   Defaults to the URL hostname SLD, e.g. \"figma\".");
+    console.error("  --backup         Snapshot ~/.local/share/opencode/opencode.db before writing.");
+    console.error("  --skip-opencode  Only write mcp-auth.json (legacy V1 behavior).");
     process.exit(1);
   }
+
+  // OpenCode V2 keys the credential by (server name, url) — the name here must
+  // match `mcp.servers.<name>` in opencode.json.
+  const opencodeServerName = nameFlag ?? serverKey(mcpServerUrl);
 
   const config: McpOAuthConfig = {
     serverUrl: mcpServerUrl,
@@ -107,6 +136,24 @@ async function main() {
       console.log("[MCP] Available tools:");
       for (const tool of tools.tools) {
         console.log(`  - ${tool.name}: ${tool.description ?? "(no description)"}`);
+      }
+    }
+
+    if (!skipOpencode) {
+      const snapshot = provider.authSnapshot();
+      if (!snapshot.tokens) {
+        console.warn("[OpenCode V2] No tokens stored; skipping credential write.");
+      } else {
+        console.log(`\n[OpenCode V2] Writing credential for server "${opencodeServerName}"...`);
+        writeOpenCodeCredential(
+          {
+            serverName: opencodeServerName,
+            serverUrl: snapshot.serverUrl,
+            tokens: snapshot.tokens,
+            client: snapshot.client,
+          },
+          { backup },
+        );
       }
     }
   } finally {

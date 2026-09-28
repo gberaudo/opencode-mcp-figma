@@ -1,3 +1,7 @@
 mcp-auth.json
 node_modules
 dist
+
+.idea
+
+.DS_Store
