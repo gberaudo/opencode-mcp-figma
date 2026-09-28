@@ -25,7 +25,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   constructor(config: McpOAuthConfig) {
     this.config = config;
-    this.port = config.callbackPort ?? 3000;
+    this.port = config.callbackPort ?? 3001;
     this.storage = new AuthStorage(config.serverUrl);
   }
 
@@ -67,11 +67,25 @@ export class McpOAuthProvider implements OAuthClientProvider {
   redirectToAuthorization(authorizationUrl: URL): void {
     const url = authorizationUrl.toString();
     console.log(`\n[OAuth] Opening authorization URL in your browser:\n  ${url}\n`);
-    spawnSync("xdg-open", [url], { stdio: "ignore" });
+    const opener = process.platform === "darwin" ? "open" : "xdg-open";
+    spawnSync(opener, [url], { stdio: "ignore" });
   }
 
   saveCodeVerifier(codeVerifier: string): void {
     this.storage.saveCodeVerifier(codeVerifier);
+  }
+
+  /** Everything an external credential store needs, post-authentication. */
+  authSnapshot(): {
+    serverUrl: string;
+    client: OAuthClientInformationMixed | undefined;
+    tokens: OAuthTokens | undefined;
+  } {
+    return {
+      serverUrl: this.config.serverUrl,
+      client: this.storage.loadClientInformation(),
+      tokens: this.storage.loadTokens(),
+    };
   }
 
   codeVerifier(): string {
