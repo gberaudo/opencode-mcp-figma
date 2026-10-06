@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { OAuthClientInformationMixed, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
 
 const AUTH_FILE = "mcp-auth.json";
@@ -42,7 +42,8 @@ function readFile(): AuthFileContents {
 }
 
 function writeFile(contents: AuthFileContents): void {
-  writeFileSync(AUTH_FILE, `${JSON.stringify(contents, null, 2)}\n`, "utf-8");
+  writeFileSync(AUTH_FILE, `${JSON.stringify(contents, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
+  chmodSync(AUTH_FILE, 0o600);
 }
 
 /**
@@ -157,6 +158,16 @@ export class AuthStorage {
     const entry = (data[this.sKey] as ServerStateEntry) ?? {};
     entry.oauthState = state;
     data[this.sKey] = entry;
+    writeFile(data);
+  }
+
+  clearOAuthState(): void {
+    const data = readFile();
+    const entry = data[this.sKey] as ServerStateEntry | undefined;
+    if (!entry) return;
+    delete entry.oauthState;
+    if (!entry.codeVerifier) delete data[this.sKey];
+    else data[this.sKey] = entry;
     writeFile(data);
   }
 }

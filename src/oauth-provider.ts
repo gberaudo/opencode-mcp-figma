@@ -1,3 +1,4 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
@@ -41,6 +42,24 @@ export class McpOAuthProvider implements OAuthClientProvider {
       response_types: ["code"],
       token_endpoint_auth_method: "none",
     };
+  }
+
+  state(): string {
+    const state = randomBytes(32).toString("base64url");
+    this.storage.saveOAuthState(state);
+    return state;
+  }
+
+  consumeState(state?: string): boolean {
+    const expected = this.storage.loadOAuthState();
+    if (!state || !expected) return false;
+    const receivedBytes = Buffer.from(state);
+    const expectedBytes = Buffer.from(expected);
+    if (receivedBytes.length !== expectedBytes.length || !timingSafeEqual(receivedBytes, expectedBytes)) {
+      return false;
+    }
+    this.storage.clearOAuthState();
+    return true;
   }
 
   clientInformation(): OAuthClientInformationMixed | undefined {

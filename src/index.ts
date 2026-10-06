@@ -12,12 +12,19 @@ async function startCallbackServer(provider: McpOAuthProvider): Promise<Server> 
   const app = express();
 
   app.get(OAUTH_CALLBACK_PATH, (req, res) => {
-    const code = req.query.code as string | undefined;
-    const error = req.query.error as string | undefined;
+    const code = typeof req.query.code === "string" ? req.query.code : undefined;
+    const error = typeof req.query.error === "string" ? req.query.error : undefined;
+    const state = typeof req.query.state === "string" ? req.query.state : undefined;
+
+    if (!provider.consumeState(state)) {
+      res.status(400).send("<h1>Authorization failed</h1><p>Invalid OAuth state.</p>");
+      console.error("[OAuth] Rejected callback with invalid state.");
+      return;
+    }
 
     if (error) {
-      res.status(400).send(`<h1>Authorization failed</h1><p>${error}</p>`);
-      console.error(`[OAuth] Authorization error: ${error}`);
+      res.status(400).send("<h1>Authorization failed</h1><p>Figma declined authorization.</p>");
+      console.error("[OAuth] Authorization was declined by Figma.");
       return;
     }
 
@@ -33,7 +40,7 @@ async function startCallbackServer(provider: McpOAuthProvider): Promise<Server> 
 
   return new Promise((resolve) => {
     const server = createServer(app);
-    server.listen(CALLBACK_PORT, () => {
+    server.listen(CALLBACK_PORT, "127.0.0.1", () => {
       console.log(`[OAuth] Callback server listening on http://localhost:${CALLBACK_PORT}`);
       resolve(server);
     });
